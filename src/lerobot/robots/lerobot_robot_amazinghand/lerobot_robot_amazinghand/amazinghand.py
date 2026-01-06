@@ -47,21 +47,44 @@ class AmazingHand(Robot):
         self.config = config
         import os
         
+        # Motor IDs differ between left and right hand
+        # Left hand IDs: from Demo's l_hand.toml
+        # Right hand IDs: from Demo's r_hand.toml (typically ID+10 offset or different mapping)
+        if self.config.side == "left":
+            motor_ids = {
+                "index_m1": 15,
+                "index_m2": 16,
+                "middle_m1": 13,
+                "middle_m2": 14,
+                "ring_m1": 11,
+                "ring_m2": 12,
+                "thumb_m1": 17,
+                "thumb_m2": 18,
+            }
+        else:  # right hand
+            # Right hand IDs are -10 from left hand IDs
+            motor_ids = {
+                "index_m1": 5,
+                "index_m2": 6,
+                "middle_m1": 3,
+                "middle_m2": 4,
+                "ring_m1": 1,
+                "ring_m2": 2,
+                "thumb_m1": 7,
+                "thumb_m2": 8,
+            }
+        
         self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
-                # Index
-                "index_m1": Motor(15, "scs0009", MotorNormMode.RANGE_0_100),
-                "index_m2": Motor(16, "scs0009", MotorNormMode.RANGE_0_100),
-                # Middle
-                "middle_m1": Motor(13, "scs0009", MotorNormMode.RANGE_0_100),
-                "middle_m2": Motor(14, "scs0009", MotorNormMode.RANGE_0_100),
-                # Ring
-                "ring_m1": Motor(11, "scs0009", MotorNormMode.RANGE_0_100),
-                "ring_m2": Motor(12, "scs0009", MotorNormMode.RANGE_0_100),
-                # Thumb
-                "thumb_m1": Motor(17, "scs0009", MotorNormMode.RANGE_0_100),
-                "thumb_m2": Motor(18, "scs0009", MotorNormMode.RANGE_0_100),
+                "index_m1": Motor(motor_ids["index_m1"], "scs0009", MotorNormMode.RANGE_0_100),
+                "index_m2": Motor(motor_ids["index_m2"], "scs0009", MotorNormMode.RANGE_0_100),
+                "middle_m1": Motor(motor_ids["middle_m1"], "scs0009", MotorNormMode.RANGE_0_100),
+                "middle_m2": Motor(motor_ids["middle_m2"], "scs0009", MotorNormMode.RANGE_0_100),
+                "ring_m1": Motor(motor_ids["ring_m1"], "scs0009", MotorNormMode.RANGE_0_100),
+                "ring_m2": Motor(motor_ids["ring_m2"], "scs0009", MotorNormMode.RANGE_0_100),
+                "thumb_m1": Motor(motor_ids["thumb_m1"], "scs0009", MotorNormMode.RANGE_0_100),
+                "thumb_m2": Motor(motor_ids["thumb_m2"], "scs0009", MotorNormMode.RANGE_0_100),
             },
             calibration=self.calibration,
             protocol_version=1,
@@ -150,16 +173,27 @@ class AmazingHand(Robot):
             mjcf_path = p
             logger.info(f"Using MuJoCo model from LEROBOT_MJCF_PATH: {mjcf_path}")
         else:
-            # Try both the original teleoperator location and new configs location
-            robot_package_dir = Path(__file__).parent.parent.parent.parent
-            # First try configs/robot/amazinghand/mjcf/scene.xml (copied from Demo)
-            mjcf_path = robot_package_dir / "configs" / "robot" / "amazinghand" / "mjcf" / "scene.xml"
+            # Select model based on hand side (left/right)
+            hand_folder = f"AH_Left" if self.config.side == "left" else "AH_Right"
+            
+            # Try robot package directory first
+            robot_dir = Path(__file__).parent
+            mjcf_path = robot_dir / hand_folder / "mjcf" / "scene.xml"
+            
+            if not mjcf_path.exists():
+                # Try configs location
+                robot_package_dir = Path(__file__).parent.parent.parent.parent
+                mjcf_path = robot_package_dir / "configs" / "robot" / "amazinghand" / hand_folder / "mjcf" / "scene.xml"
+            
             if not mjcf_path.exists():
                 # Fallback to teleoperator package
-                mjcf_path = robot_package_dir / "teleoperators" / "lerobot_teleoperator_amazinghandtracker" / "lerobot_teleoperator_amazinghandtracker" / "mjcf" / "scene.xml"
+                robot_package_dir = Path(__file__).parent.parent.parent.parent
+                mjcf_path = robot_package_dir / "teleoperators" / "lerobot_teleoperator_amazinghandtracker" / "lerobot_teleoperator_amazinghandtracker" / hand_folder / "mjcf" / "scene.xml"
+            
             if not mjcf_path.exists():
-                raise FileNotFoundError(f"MuJoCo model not found at {mjcf_path}")
-            logger.info(f"Using bundled MuJoCo model: {mjcf_path}")
+                raise FileNotFoundError(f"MuJoCo model not found for {self.config.side} hand at {mjcf_path}")
+            
+            logger.info(f"Using bundled MuJoCo model for {self.config.side} hand: {mjcf_path}")
         
         self.mj_model = mujoco.MjModel.from_xml_path(str(mjcf_path))
         self.mj_data = mujoco.MjData(self.mj_model)
@@ -266,8 +300,9 @@ class AmazingHand(Robot):
         if toml_path_str:
             toml_path = Path(toml_path_str)
         else:
-            # Check standard location: config/l_hand.toml next to this file (Demo format)
-            toml_path = Path(__file__).parent / "config" / "l_hand.toml"
+            # Check standard location: config/l_hand.toml or r_hand.toml based on side (Demo format)
+            hand_file = "l_hand.toml" if self.config.side == "left" else "r_hand.toml"
+            toml_path = Path(__file__).parent / "config" / hand_file
             if not toml_path.exists():
                 # Fallback to motor_offsets.toml if custom file exists
                 toml_path = Path(__file__).parent / "config" / "motor_offsets.toml"

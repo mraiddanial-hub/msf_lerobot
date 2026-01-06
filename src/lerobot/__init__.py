@@ -165,7 +165,8 @@ available_robots = [
     "koch_bimanual",
     "aloha",
     "so100",
-    "so101",
+    "so101"
+    "lerobot_robot_amazinghand",
 ]
 
 # lists all available cameras from `lerobot/cameras`

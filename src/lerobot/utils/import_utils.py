@@ -136,7 +136,7 @@ def register_third_party_devices() -> None:
     Scans top-level modules on sys.path for packages starting with
     'lerobot_robot_', 'lerobot_camera_' or 'lerobot_teleoperator_' and imports them.
     """
-    prefixes = ("lerobot_robot_", "lerobot_camera_", "lerobot_teleoperator_")
+    prefixes = ("__editable___lerobot_robot_", "lerobot_camera_", "__editable___lerobot_teleoperator_")
     imported: list[str] = []
     failed: list[str] = []
 

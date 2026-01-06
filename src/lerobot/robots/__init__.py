@@ -17,3 +17,53 @@
 from .config import RobotConfig
 from .robot import Robot
 from .utils import make_robot_from_config
+import importlib
+import pkgutil
+
+# Ensure all robot subpackages are imported so their config classes get registered
+# with RobotConfig (via the @RobotConfig.register_subclass decorator). This
+# makes sure dynamic choice lists (e.g. --robot.type) include third-party
+# or local robot implementations when the package is imported (such as by
+# console scripts).
+for _finder, pkg_name, _ispkg in pkgutil.iter_modules(__path__, __name__ + "."):
+	try:
+		mod = importlib.import_module(pkg_name)
+		# If the discovered package itself contains submodules (e.g. the
+		# project layout places the actual Python package inside a folder
+		# with the same name), import its submodules as well so any
+		# registration performed in those submodules runs.
+		if hasattr(mod, "__path__"):
+			for _f2, sub_name, _is2 in pkgutil.iter_modules(mod.__path__, mod.__name__ + "."):
+				try:
+					importlib.import_module(sub_name)
+				except Exception:
+					# ignore failures at this level; they'll surface when that
+					# specific robot is actually used
+					pass
+			# Additionally try to import a nested package that shares the same
+			# last path component. Some plugins are packaged as
+			# <pkg>/<pkg>/... (an outer folder with the same name as the inner
+			# package). In that case, importing the outer namespace package
+			# doesn't automatically import the inner package; try to import
+			# it explicitly.
+			try:
+				for p in list(mod.__path__):
+					# look for a directory named like the package inside this path
+					import os
+
+					inner_name = mod.__name__.split(".")[-1]
+					candidate = os.path.join(p, inner_name)
+					if os.path.isdir(candidate):
+						# Form the nested import path and try to import it.
+						nested = f"{mod.__name__}.{inner_name}"
+						try:
+							importlib.import_module(nested)
+						except Exception:
+							pass
+			except Exception:
+				pass
+	except Exception:
+		# Don't fail import of the top-level package if a single robot submodule
+		# has issues. The specific submodule import error will surface when
+		# that robot is actually used.
+		pass

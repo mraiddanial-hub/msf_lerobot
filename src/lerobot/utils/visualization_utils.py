@@ -40,6 +40,7 @@ def _is_scalar(x):
 def log_rerun_data(
     observation: dict[str, Any] | None = None,
     action: dict[str, Any] | None = None,
+    robot_action: dict[str, Any] | None = None,
 ) -> None:
     """
     Logs observation and action data to Rerun for real-time visualization.
@@ -57,6 +58,7 @@ def log_rerun_data(
     Args:
         observation: An optional dictionary containing observation data to log.
         action: An optional dictionary containing action data to log.
+        robot_action: An optional dictionary containing the actual commands sent to robot motors.
     """
     if observation:
         for k, v in observation.items():
@@ -82,6 +84,24 @@ def log_rerun_data(
             if v is None:
                 continue
             key = k if str(k).startswith("action.") else f"action.{k}"
+
+            if _is_scalar(v):
+                rr.log(key, rr.Scalar(float(v)))
+            elif isinstance(v, np.ndarray):
+                if v.ndim == 1:
+                    for i, vi in enumerate(v):
+                        rr.log(f"{key}_{i}", rr.Scalar(float(vi)))
+                else:
+                    # Fall back to flattening higher-dimensional arrays
+                    flat = v.flatten()
+                    for i, vi in enumerate(flat):
+                        rr.log(f"{key}_{i}", rr.Scalar(float(vi)))
+
+    if robot_action:
+        for k, v in robot_action.items():
+            if v is None:
+                continue
+            key = k if str(k).startswith("robot_action.") else f"robot_action.{k}"
 
             if _is_scalar(v):
                 rr.log(key, rr.Scalar(float(v)))

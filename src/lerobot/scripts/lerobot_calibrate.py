@@ -84,6 +84,27 @@ def calibrate(cfg: CalibrateConfig):
 
 
 def main():
+    # Ensure local plugin config modules are imported so draccus sees their
+    # registered config subclasses even if full package imports fail due to
+    # missing hardware SDKs. These imports are best-effort and non-fatal.
+    try:
+        import importlib
+
+        importlib.import_module(
+            "lerobot.robots.lerobot_robot_amazinghand.lerobot_robot_amazinghand.config_amazinghand"
+        )
+    except Exception:
+        pass
+
+    try:
+        import importlib
+
+        importlib.import_module(
+            "lerobot.teleoperators.lerobot_teleoperator_amazinghandtracker.lerobot_teleoperator_amazinghandtracker.config_amazinghandtracker"
+        )
+    except Exception:
+        pass
+
     register_third_party_devices()
     calibrate()
 

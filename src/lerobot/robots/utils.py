@@ -64,6 +64,10 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         from .reachy2 import Reachy2Robot
 
         return Reachy2Robot(config)
+    elif config.type == "lerobot_amazinghand":
+        from .lerobot_robot_amazinghand.lerobot_robot_amazinghand import AmazingHand
+
+        return AmazingHand(config)
     elif config.type == "mock_robot":
         from tests.mocks.mock_robot import MockRobot
 

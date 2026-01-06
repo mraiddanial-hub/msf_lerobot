@@ -35,14 +35,14 @@ class Stretch3RobotConfig(RobotConfig):
                 rotation=-90,
             ),
             "head": RealSenseCameraConfig(
-                name="Intel RealSense D435I",
+                serial_number_or_name="Intel RealSense D435I",
                 fps=30,
                 width=640,
                 height=480,
                 rotation=90,
             ),
             "wrist": RealSenseCameraConfig(
-                name="Intel RealSense D405",
+                serial_number_or_name="Intel RealSense D405",
                 fps=30,
                 width=640,
                 height=480,

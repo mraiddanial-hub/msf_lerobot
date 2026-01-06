@@ -1,0 +1,30 @@
+# Requirements for AmazingHand Robot
+# Install with: pip install -r requirements-amazinghand.txt
+
+# Core LeRobot dependencies (base package)
+-e .
+
+# Robot-specific dependencies
+mujoco>=3.3.6
+mink>=0.0.13
+mediapipe>=0.10.14
+feetech-servo-sdk>=1.0.0
+
+# IK solver dependencies
+qpsolvers[quadprog]>=4.8.0
+quadprog>=0.1.11
+daqp>=0.5.1
+
+# Training dependencies for SmolVLA
+transformers>=4.57.0
+num2words>=0.5.13
+accelerate>=0.20.0
+tokenizers>=0.20.0
+
+# Additional useful packages
+opencv-contrib-python>=4.11.0
+scipy>=1.15.0
+numpy>=1.26.0,<2.0.0  # Compatible with both opencv and other deps
+
+# Optional: For visualization
+matplotlib>=3.10.0

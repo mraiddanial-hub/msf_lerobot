@@ -76,6 +76,7 @@ from lerobot.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    lerobot_robot_amazinghand,
 )
 from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
@@ -87,7 +88,28 @@ from lerobot.teleoperators import (  # noqa: F401
     make_teleoperator_from_config,
     so100_leader,
     so101_leader,
+    lerobot_teleoperator_amazinghandtracker,
 )
+import importlib
+
+# Some robot/teleoperator plugins are packaged under a nested package
+# layout (e.g. <pkg>/<pkg>/...). The outer namespace package import may
+# not import the inner package where the config/registration lives. To
+# ensure draccus sees the registered config choices we explicitly import
+# the config modules for those plugins here.
+try:
+    importlib.import_module(
+        "lerobot.robots.lerobot_robot_amazinghand.lerobot_robot_amazinghand.config_amazinghand"
+    )
+except Exception:
+    pass
+
+try:
+    importlib.import_module(
+        "lerobot.teleoperators.lerobot_teleoperator_amazinghandtracker.lerobot_teleoperator_amazinghandtracker.config_amazinghandtracker"
+    )
+except Exception:
+    pass
 from lerobot.utils.import_utils import register_third_party_devices
 from lerobot.utils.robot_utils import busy_wait
 from lerobot.utils.utils import init_logging, move_cursor_up
@@ -160,10 +182,7 @@ def teleop_loop(
             # Process robot observation through pipeline
             obs_transition = robot_observation_processor(obs)
 
-            log_rerun_data(
-                observation=obs_transition,
-                action=teleop_action,
-            )
+            log_rerun_data(observation=obs, robot_action=robot_action_to_send)
 
             print("\n" + "-" * (display_len + 10))
             print(f"{'NAME':<{display_len}} | {'NORM':>7}")

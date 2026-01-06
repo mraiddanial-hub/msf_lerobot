@@ -126,6 +126,23 @@ from lerobot.utils.utils import (
     log_say,
 )
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
+import importlib
+
+# Best-effort import of local plugin config modules so CLI choices include
+# plugins that might fail full import due to missing hardware SDKs.
+try:
+    importlib.import_module(
+        "lerobot.robots.lerobot_robot_amazinghand.lerobot_robot_amazinghand.config_amazinghand"
+    )
+except Exception:
+    pass
+
+try:
+    importlib.import_module(
+        "lerobot.teleoperators.lerobot_teleoperator_amazinghandtracker.lerobot_teleoperator_amazinghandtracker.config_amazinghandtracker"
+    )
+except Exception:
+    pass
 
 
 @dataclass
@@ -361,7 +378,7 @@ def record_loop(
             dataset.add_frame(frame)
 
         if display_data:
-            log_rerun_data(observation=obs_processed, action=action_values)
+            log_rerun_data(observation=obs, robot_action=robot_action_to_send)
 
         dt_s = time.perf_counter() - start_loop_t
         busy_wait(1 / fps - dt_s)

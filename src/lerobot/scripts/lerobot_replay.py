@@ -67,6 +67,23 @@ from lerobot.utils.utils import (
     init_logging,
     log_say,
 )
+import importlib
+
+# Best-effort import of local plugin config modules so CLI choices include
+# plugins that might fail full import due to missing hardware SDKs.
+try:
+    importlib.import_module(
+        "lerobot.robots.lerobot_robot_amazinghand.lerobot_robot_amazinghand.config_amazinghand"
+    )
+except Exception:
+    pass
+
+try:
+    importlib.import_module(
+        "lerobot.teleoperators.lerobot_teleoperator_amazinghandtracker.lerobot_teleoperator_amazinghandtracker.config_amazinghandtracker"
+    )
+except Exception:
+    pass
 
 
 @dataclass

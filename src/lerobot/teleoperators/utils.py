@@ -85,6 +85,10 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
         from .reachy2_teleoperator import Reachy2Teleoperator
 
         return Reachy2Teleoperator(config)
+    elif config.type == "lerobot_teleoperator_amazinghandtracker":
+        from .lerobot_teleoperator_amazinghandtracker.lerobot_teleoperator_amazinghandtracker.amazinghandtracker import AmazingHandTracker
+        
+        return AmazingHandTracker(config)
     else:
         try:
             return cast(Teleoperator, make_device_from_device_class(config))

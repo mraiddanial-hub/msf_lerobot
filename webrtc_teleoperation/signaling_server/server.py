@@ -6,6 +6,7 @@ Deploy this to Render.com, Railway.app, or any cloud hosting.
 import asyncio
 import json
 import logging
+import aiohttp
 from aiohttp import web
 import aiohttp_cors
 

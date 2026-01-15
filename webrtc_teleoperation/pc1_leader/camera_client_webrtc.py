@@ -1,6 +1,12 @@
 """
 PC1 (Leader) - WebRTC Camera Client
 Receives camera feed via WebRTC and displays it.
+
+Features:
+- Video latency measurement
+- Frame rate tracking
+- Bandwidth monitoring
+- CSV logging with timestamp
 """
 import asyncio
 import json
@@ -8,6 +14,11 @@ import cv2
 import logging
 import websockets
 import numpy as np
+import csv
+import time
+from datetime import datetime
+from collections import deque
+import statistics
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from av import VideoFrame
 
@@ -18,6 +29,10 @@ logger = logging.getLogger(__name__)
 SIGNALING_SERVER = "ws://localhost:8080/ws"  # Change to your deployed server URL
 PEER_ID = "leader"
 TARGET_PEER = "follower"
+
+# Measurement settings
+LOG_INTERVAL = 1.0  # Log metrics every 1 second
+LATENCY_WINDOW = 100  # Keep last 100 latency measurements
 
 # =========================
 
@@ -32,6 +47,24 @@ class WebRTCCameraClient:
         self.pc = None
         self.ws = None
         self.video_frames = asyncio.Queue(maxsize=1)
+        
+        # Measurement tracking
+        self.frame_count = 0
+        self.frames_received = 0
+        self.frames_dropped = 0
+        self.bytes_received = 0
+        self.latency_measurements = deque(maxlen=LATENCY_WINDOW)
+        self.last_log_time = time.time()
+        
+        # Create CSV log file
+        log_filename = f"teleoperation_video_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self.csv_file = open(log_filename, 'w', newline='')
+        self.csv_writer = csv.writer(self.csv_file)
+        self.csv_writer.writerow([
+            'Timestamp', 'Video_Latency_ms', 'Jitter_ms', 'FPS', 
+            'Frames_Dropped_%', 'Bandwidth_kbps'
+        ])
+        logger.info(f"Logging to: {log_filename}")
     
     async def connect_signaling(self):
         """Connect to signaling server."""
@@ -86,15 +119,26 @@ class WebRTCCameraClient:
         logger.info("Started receiving video frames")
         try:
             while True:
+                recv_time = time.time()
                 frame = await track.recv()
+                
+                # Calculate latency (frame.time is in seconds since epoch)
+                if hasattr(frame, 'time') and frame.time:
+                    latency = (recv_time - frame.time) * 1000  # Convert to ms
+                    self.latency_measurements.append(latency)
                 
                 # Convert av.VideoFrame to numpy array
                 img = frame.to_ndarray(format="bgr24")
+                
+                # Track bytes (approximate)
+                self.bytes_received += img.nbytes
+                self.frames_received += 1
                 
                 # Put frame in queue (drop old frame if queue full)
                 if self.video_frames.full():
                     try:
                         self.video_frames.get_nowait()
+                        self.frames_dropped += 1
                     except asyncio.QueueEmpty:
                         pass
                 
@@ -129,10 +173,56 @@ class WebRTCCameraClient:
     async def display_video(self):
         """Display received video frames."""
         logger.info("Starting video display...")
+        frames_displayed = 0
+        display_start = time.time()
+        
         while True:
             try:
                 # Get frame from queue with timeout
                 frame = await asyncio.wait_for(self.video_frames.get(), timeout=1.0)
+                frames_displayed += 1
+                self.frame_count += 1
+                
+                # Calculate and log metrics periodically
+                current_time = time.time()
+                if current_time - self.last_log_time >= LOG_INTERVAL:
+                    elapsed = current_time - self.last_log_time
+                    
+                    # Calculate metrics
+                    avg_latency = statistics.mean(self.latency_measurements) if self.latency_measurements else 0
+                    jitter = statistics.stdev(self.latency_measurements) if len(self.latency_measurements) > 1 else 0
+                    fps = self.frame_count / elapsed
+                    drop_rate = (self.frames_dropped / self.frames_received * 100) if self.frames_received > 0 else 0
+                    bandwidth = (self.bytes_received * 8) / elapsed / 1000  # kbps
+                    
+                    # Write to CSV
+                    self.csv_writer.writerow([
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                        f"{avg_latency:.2f}",
+                        f"{jitter:.2f}",
+                        f"{fps:.1f}",
+                        f"{drop_rate:.2f}",
+                        f"{bandwidth:.2f}"
+                    ])
+                    self.csv_file.flush()
+                    
+                    # Print to console
+                    logger.info(f"Video - Latency: {avg_latency:.1f}ms | Jitter: {jitter:.1f}ms | FPS: {fps:.1f} | Drop: {drop_rate:.1f}% | BW: {bandwidth:.1f}kbps")
+                    
+                    # Reset counters
+                    self.last_log_time = current_time
+                    self.frame_count = 0
+                    self.bytes_received = 0
+                
+                # Add metrics overlay on frame
+                if self.latency_measurements:
+                    avg_latency = statistics.mean(self.latency_measurements)
+                    fps = frames_displayed / (current_time - display_start) if (current_time - display_start) > 0 else 0
+                    
+                    cv2.putText(frame, f"Latency: {avg_latency:.1f}ms", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 60), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
                 # Display frame
                 cv2.imshow("Follower Camera (WebRTC)", frame)
@@ -172,6 +262,9 @@ class WebRTCCameraClient:
                 await self.pc.close()
             if self.ws:
                 await self.ws.close()
+            if hasattr(self, 'csv_file'):
+                self.csv_file.close()
+                logger.info(f"Video log saved")
             cv2.destroyAllWindows()
             logger.info("Camera client stopped")
 

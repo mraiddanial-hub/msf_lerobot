@@ -2,6 +2,10 @@
 PC2 (Follower) - Robot Control Receiver (UDP)
 Receives robot commands via UDP and controls the bi-SO100 follower arm.
 This is kept separate from WebRTC camera streaming.
+
+Features:
+- Echo packets back to leader for RTT measurement
+- Receive timestamped commands
 """
 import socket
 import json
@@ -31,11 +35,18 @@ follower.connect()
 
 print(f"Follower robot initialized on {FOLLOWER_LEFT_PORT} (left) and {FOLLOWER_RIGHT_PORT} (right)")
 print(f"Listening for commands on UDP port {UDP_PORT}")
+print("Echoing packets for RTT measurement")
 
 try:
     while True:
         data, addr = sock.recvfrom(4096)
         msg = json.loads(data.decode("utf-8"))
+        
+        # Echo back sequence number for RTT measurement
+        if "seq" in msg:
+            echo = {"seq": msg["seq"]}
+            echo_data = json.dumps(echo).encode("utf-8")
+            sock.sendto(echo_data, addr)
         
         action = msg.get("action")
         if action:

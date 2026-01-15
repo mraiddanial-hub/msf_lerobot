@@ -21,7 +21,7 @@ from lerobot.teleoperators.bi_so100_leader.bi_so100_leader import BiSO100Leader
 from lerobot.teleoperators.bi_so100_leader.config_bi_so100_leader import BiSO100LeaderConfig
 
 # ========= CONFIG =========
-FOLLOWER_IP = "192.168.0.90"  # PC2 IP address
+FOLLOWER_IP = "100.78.30.123"  # PC2 IP address
 UDP_PORT = 5005
 SEND_HZ = 50
 

@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ========= CONFIG =========
-SIGNALING_SERVER = "ws://localhost:8080/ws"  # Change to your deployed server URL
+SIGNALING_SERVER = "wss://msf-lerobot-1.onrender.com/ws"  # Change to your deployed server URL
 CAMERA_INDEX = 0  # Change to your camera index
 PEER_ID = "follower"
 TARGET_PEER = "leader"

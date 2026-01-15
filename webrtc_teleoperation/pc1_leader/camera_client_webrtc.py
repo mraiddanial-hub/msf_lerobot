@@ -26,9 +26,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ========= CONFIG =========
-SIGNALING_SERVER = "ws://localhost:8080/ws"  # Change to your deployed server URL
+SIGNALING_SERVER = "wss://msf-lerobot-1.onrender.com/ws"  # Change to your deployed server URL
 PEER_ID = "leader"
 TARGET_PEER = "follower"
+
+# ICE servers for NAT traversal
+ICE_SERVERS = [
+    {"urls": "stun:stun.l.google.com:19302"},
+    {"urls": "stun:stun1.l.google.com:19302"},
+]
 
 # Measurement settings
 LOG_INTERVAL = 1.0  # Log metrics every 1 second
@@ -46,7 +52,8 @@ class WebRTCCameraClient:
         self.target_peer = target_peer
         self.pc = None
         self.ws = None
-        self.video_frames = asyncio.Queue(maxsize=1)
+        self.video_tracks = []  # List to store multiple tracks
+        self.video_queues = []  # Separate queue for each camera
         
         # Measurement tracking
         self.frame_count = 0
@@ -84,14 +91,32 @@ class WebRTCCameraClient:
     
     async def handle_offer(self, offer_data):
         """Handle incoming offer and send answer."""
-        self.pc = RTCPeerConnection()
+        from aiortc import RTCConfiguration, RTCIceServer
+        
+        ice_servers = []
+        for server in ICE_SERVERS:
+            if "username" in server and "credential" in server:
+                ice_servers.append(RTCIceServer(
+                    urls=server["urls"],
+                    username=server["username"],
+                    credential=server["credential"]
+                ))
+            else:
+                ice_servers.append(RTCIceServer(urls=server["urls"]))
+        
+        config = RTCConfiguration(iceServers=ice_servers)
+        self.pc = RTCPeerConnection(configuration=config)
         
         # Handle incoming video track
         @self.pc.on("track")
         async def on_track(track):
             logger.info(f"Receiving {track.kind} track")
             if track.kind == "video":
-                asyncio.create_task(self.process_video_track(track))
+                track_index = len(self.video_tracks)
+                self.video_tracks.append(track)
+                queue = asyncio.Queue(maxsize=1)
+                self.video_queues.append(queue)
+                asyncio.create_task(self.process_video_track(track, queue, track_index))
         
         # Set remote description (offer)
         offer = RTCSessionDescription(
@@ -114,9 +139,9 @@ class WebRTCCameraClient:
         }))
         logger.info(f"Sent answer to {self.target_peer}")
     
-    async def process_video_track(self, track):
+    async def process_video_track(self, track, queue, track_index):
         """Process incoming video frames."""
-        logger.info("Started receiving video frames")
+        logger.info(f"Started receiving video frames for Camera {track_index + 1}")
         try:
             while True:
                 recv_time = time.time()
@@ -135,17 +160,17 @@ class WebRTCCameraClient:
                 self.frames_received += 1
                 
                 # Put frame in queue (drop old frame if queue full)
-                if self.video_frames.full():
+                if queue.full():
                     try:
-                        self.video_frames.get_nowait()
+                        queue.get_nowait()
                         self.frames_dropped += 1
                     except asyncio.QueueEmpty:
                         pass
                 
-                await self.video_frames.put(img)
+                await queue.put(img)
         
         except Exception as e:
-            logger.error(f"Error processing video: {e}")
+            logger.error(f"Error processing video from Camera {track_index + 1}: {e}")
     
     async def handle_signaling_messages(self):
         """Handle incoming signaling messages."""
@@ -171,20 +196,59 @@ class WebRTCCameraClient:
             logger.warning("Signaling connection closed")
     
     async def display_video(self):
-        """Display received video frames."""
+        """Display received video frames in separate windows."""
         logger.info("Starting video display...")
         frames_displayed = 0
         display_start = time.time()
         
+        # Position windows in a 2x2 grid
+        window_positions = [
+            (0, 0),      # Top-left
+            (650, 0),    # Top-right
+            (0, 500),    # Bottom-left
+            (650, 500),  # Bottom-right
+        ]
+        
+        windows_created = set()
+        
         while True:
             try:
-                # Get frame from queue with timeout
-                frame = await asyncio.wait_for(self.video_frames.get(), timeout=1.0)
-                frames_displayed += 1
-                self.frame_count += 1
+                current_time = time.time()
+                
+                # Display each camera in its own window
+                for i, queue in enumerate(self.video_queues):
+                    try:
+                        # Try to get latest frame (non-blocking)
+                        frame = queue.get_nowait()
+                        frames_displayed += 1
+                        self.frame_count += 1
+                        
+                        # Add metrics overlay on frame
+                        if self.latency_measurements:
+                            avg_latency = statistics.mean(self.latency_measurements)
+                            fps = frames_displayed / (current_time - display_start) if (current_time - display_start) > 0 else 0
+                            
+                            cv2.putText(frame, f"Camera {i + 1}", (10, 30), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                            cv2.putText(frame, f"Latency: {avg_latency:.1f}ms", (10, 60), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                            cv2.putText(frame, f"FPS: {fps:.1f}", (10, 90), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        window_name = f"Camera {i + 1}"
+                        cv2.imshow(window_name, frame)
+                        
+                        # Position window only once when first created
+                        if window_name not in windows_created and i < len(window_positions):
+                            x, y = window_positions[i]
+                            cv2.moveWindow(window_name, x, y)
+                            windows_created.add(window_name)
+                    
+                    except asyncio.QueueEmpty:
+                        # No new frame available for this camera - that's ok
+                        pass
                 
                 # Calculate and log metrics periodically
-                current_time = time.time()
                 if current_time - self.last_log_time >= LOG_INTERVAL:
                     elapsed = current_time - self.last_log_time
                     
@@ -214,28 +278,14 @@ class WebRTCCameraClient:
                     self.frame_count = 0
                     self.bytes_received = 0
                 
-                # Add metrics overlay on frame
-                if self.latency_measurements:
-                    avg_latency = statistics.mean(self.latency_measurements)
-                    fps = frames_displayed / (current_time - display_start) if (current_time - display_start) > 0 else 0
-                    
-                    cv2.putText(frame, f"Latency: {avg_latency:.1f}ms", (10, 30), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 60), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                
-                # Display frame
-                cv2.imshow("Follower Camera (WebRTC)", frame)
+                # Small async sleep to prevent busy waiting
+                await asyncio.sleep(0.01)
                 
                 # Process OpenCV events
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
                     logger.info("Quit signal received")
                     break
-            
-            except asyncio.TimeoutError:
-                # No frame received in 1 second - continue waiting
-                cv2.waitKey(1)  # Keep window responsive
-                continue
             
             except Exception as e:
                 logger.error(f"Display error: {e}")

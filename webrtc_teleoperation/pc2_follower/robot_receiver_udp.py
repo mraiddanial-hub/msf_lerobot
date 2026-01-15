@@ -4,11 +4,13 @@ Receives robot commands via UDP and controls the bi-SO100 follower arm.
 This is kept separate from WebRTC camera streaming.
 
 Features:
-- Echo packets back to leader for RTT measurement
+- Echo packets back to leader for end-to-end latency measurement
 - Receive timestamped commands
+- Measure execution latency
 """
 import socket
 import json
+import time
 from lerobot.robots.bi_so100.bi_so100 import BiSO100Robot
 from lerobot.robots.bi_so100.config_bi_so100 import BiSO100RobotConfig
 
@@ -39,19 +41,30 @@ print("Echoing packets for RTT measurement")
 
 try:
     while True:
+        recv_time = time.time()
         data, addr = sock.recvfrom(4096)
         msg = json.loads(data.decode("utf-8"))
-        
-        # Echo back sequence number for RTT measurement
-        if "seq" in msg:
-            echo = {"seq": msg["seq"]}
-            echo_data = json.dumps(echo).encode("utf-8")
-            sock.sendto(echo_data, addr)
         
         action = msg.get("action")
         if action:
             # Send action to follower robot
             follower.send_action(action)
+            execution_time = time.time()
+            
+            # Calculate end-to-end latency (from leader timestamp to execution completion)
+            leader_timestamp = msg.get("ts", execution_time)
+            end_to_end_latency = (execution_time - leader_timestamp) * 1000  # ms
+            
+            # Echo back with latency information
+            if "seq" in msg:
+                echo = {
+                    "seq": msg["seq"],
+                    "e2e_latency": end_to_end_latency,
+                    "recv_time": recv_time,
+                    "exec_time": execution_time
+                }
+                echo_data = json.dumps(echo).encode("utf-8")
+                sock.sendto(echo_data, addr)
 
 except KeyboardInterrupt:
     print("\nStopping receiver...")

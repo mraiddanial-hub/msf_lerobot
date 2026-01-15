@@ -4,7 +4,7 @@ Sends bi-SO100 leader commands via UDP to the follower.
 This is kept separate from WebRTC camera streaming.
 
 Features:
-- RTT (Round-Trip Time) measurement
+- End-to-End Latency measurement (Leader → Follower Execution)
 - Jitter calculation
 - Packet loss detection
 - Bandwidth monitoring
@@ -14,11 +14,15 @@ import socket
 import json
 import time
 import csv
+import logging
 from datetime import datetime
 from collections import deque
 import statistics
 from lerobot.teleoperators.bi_so100_leader.bi_so100_leader import BiSO100Leader
 from lerobot.teleoperators.bi_so100_leader.config_bi_so100_leader import BiSO100LeaderConfig
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ========= CONFIG =========
 FOLLOWER_IP = "100.78.30.123"  # PC2 IP address
@@ -41,7 +45,7 @@ log_filename = f"teleoperation_control_log_{datetime.now().strftime('%Y%m%d_%H%M
 csv_file = open(log_filename, 'w', newline='')
 csv_writer = csv.writer(csv_file)
 csv_writer.writerow([
-    'Timestamp', 'RTT_ms', 'Jitter_ms', 'Packet_Loss_%', 
+    'Timestamp', 'E2E_Latency_ms', 'Jitter_ms', 'Packet_Loss_%', 
     'Bandwidth_kbps', 'Packets_Sent', 'Packets_Lost'
 ])
 
@@ -70,7 +74,7 @@ last_log_time = time.time()
 print(f"Leader bi-SO100 initialized on {LEADER_LEFT_PORT} (left) and {LEADER_RIGHT_PORT} (right)")
 print(f"Sending commands to {FOLLOWER_IP}:{UDP_PORT} at {SEND_HZ} Hz")
 print(f"Logging to: {log_filename}")
-print(f"Metrics: RTT, Jitter, Packet Loss, Bandwidth")
+print(f"Metrics: End-to-End Latency (Leader → Follower Execution), Jitter, Packet Loss, Bandwidth")
 
 try:
     while True:
@@ -93,15 +97,19 @@ try:
         bytes_sent += len(data)
         packets_sent += 1
         
-        # Try to receive echo for RTT measurement
+        # Try to receive echo with end-to-end latency measurement
         try:
-            echo_data, _ = sock.recvfrom(256)
+            echo_data, _ = sock.recvfrom(512)
             recv_time = time.time()
             echo_msg = json.loads(echo_data.decode("utf-8"))
             
             if echo_msg.get("seq") == sequence_num:
-                rtt = (recv_time - send_time) * 1000  # Convert to ms
-                rtt_measurements.append(rtt)
+                # Use end-to-end latency if available, otherwise fall back to RTT
+                if "e2e_latency" in echo_msg:
+                    latency = echo_msg["e2e_latency"]
+                else:
+                    latency = (recv_time - send_time) * 1000  # Convert to ms
+                rtt_measurements.append(latency)
         except socket.timeout:
             # No echo received - count as lost packet
             packets_lost += 1
@@ -132,7 +140,7 @@ try:
             csv_file.flush()
             
             # Print to console
-            print(f"RTT: {avg_rtt:.1f}ms | Jitter: {jitter:.1f}ms | Loss: {packet_loss:.1f}% | BW: {bandwidth:.1f}kbps")
+            logger.info(f"E2E Latency: {avg_rtt:.1f}ms | Jitter: {jitter:.1f}ms | Loss: {packet_loss:.1f}% | BW: {bandwidth:.1f}kbps")
             
             # Reset counters
             last_log_time = current_time
